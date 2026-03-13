@@ -7,7 +7,7 @@ Inspired by `claude --worktree` from Claude Code.
 ## What it does
 
 - **`pi --worktree [name]`** — Create (or reuse) a git worktree and start working in it
-- **`/worktree create [name]`** — Create a worktree from within Pi, launch a new Pi instance in cmux/tmux
+- **`/worktree create [name]`** — Create a worktree from within Pi, relaunch Pi in the worktree directory
 - **`/worktree destroy <name>`** — Remove a worktree, delete the branch
 - **`/worktree list`** — List all worktrees
 - **Auto-detection** — If Pi starts inside a `.worktrees/<name>/` directory, it sets the session name and status automatically
@@ -42,7 +42,7 @@ pi --worktree
 /worktree create
 ```
 
-When cmux or tmux is available, `/worktree create` launches Pi in a new workspace/window automatically. The workspace is named `wt:<name>` for easy identification.
+When cmux or tmux is detected, Pi shuts down and relaunches itself in the worktree directory within the same terminal. The session is named `wt:<name>` for easy identification.
 
 ## Project configuration
 
@@ -80,7 +80,7 @@ When you run `pi --worktree my-feature` or `/worktree create my-feature`:
 1. Creates `git worktree add -b worktree/my-feature .worktrees/my-feature HEAD`
 2. Symlinks gitignored `.env*` files from the main repo
 3. Runs each `postCreate` command in order
-4. (From `/worktree create`) Launches a new Pi instance in cmux workspace or tmux window
+4. Relaunches Pi in the worktree directory (via cmux send / tmux send-keys)
 
 When you run `/worktree destroy my-feature`:
 
@@ -90,11 +90,19 @@ When you run `/worktree destroy my-feature`:
 
 ### Multiplexer support
 
+When Pi needs to relaunch in a worktree directory (because tools are bound to cwd at startup), it injects `cd <worktree> && pi` into the terminal after shutting down:
+
 | Multiplexer | Behavior |
 |-------------|----------|
-| **cmux** | Creates a new workspace, names it `wt:<name>` |
-| **tmux** | Creates a new window named `wt:<name>` (only if inside tmux) |
+| **cmux** | Uses `cmux send` to inject the command into the current terminal |
+| **tmux** | Uses `tmux send-keys` to inject the command (only if inside tmux) |
 | **Neither** | Prints the path for manual `cd && pi` |
+
+## Update
+
+```bash
+pi update pi-worktree
+```
 
 ## Example: Node.js + Prisma project
 
