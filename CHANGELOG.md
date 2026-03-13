@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/xiaoyu2er/pi-worktree/compare/v1.0.0...v1.0.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* don't use exec when relaunching pi to preserve the parent shell ([c9b2e0f](https://github.com/xiaoyu2er/pi-worktree/commit/c9b2e0f92407d7fd709938eccc57134f2bbeb6e0))
+
 ## 1.0.0 (2026-03-13)
 
 
