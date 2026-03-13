@@ -125,23 +125,16 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.setStatus("worktree", `🌿 ${name} (existing)`);
         }
 
-        // If we're NOT already inside the worktree, we need to tell user to restart
         const detected = detectWorktreeName(ctx.cwd);
         if (detected === name) {
-          // Already in the right worktree
+          // Already running inside the worktree — nothing to do
           worktreeName = name;
           pi.setSessionName(`wt:${name}`);
         } else {
-          // Need to launch pi in the worktree directory
-          const launched = await launchInWorktree(pi, ctx, worktreePath, name);
-          if (launched) {
-            ctx.ui.notify(
-              `✅ Worktree "${name}" ready — PI launched in new workspace.\n` +
-                `   Path: ${worktreePath}\n` +
-                `   Branch: ${branch}`,
-              "success",
-            );
-          } else {
+          // Tools are bound to the original cwd; must relaunch pi in the
+          // worktree directory so all tools resolve paths correctly.
+          const relaunched = relaunchInPlace(pi, worktreePath);
+          if (!relaunched) {
             ctx.ui.notify(
               `✅ Worktree "${name}" ready.\n` +
                 `   Path: ${worktreePath}\n` +
@@ -151,6 +144,9 @@ export default function (pi: ExtensionAPI) {
             );
           }
           ctx.ui.setStatus("worktree", undefined);
+          if (relaunched) {
+            ctx.shutdown();
+          }
           return;
         }
       } catch (err) {
@@ -258,18 +254,21 @@ export default function (pi: ExtensionAPI) {
 
       await createWorktree(pi, ctx, repoRoot, config, name);
 
-      // Launch in new workspace
-      const launched = await launchInWorktree(pi, ctx, worktreePath, name);
-
-      ctx.ui.notify(
-        `✅ Worktree "${name}" ready\n` +
-          `   Path:   ${worktreePath}\n` +
-          `   Branch: ${branch}\n` +
-          (launched
-            ? `   PI launched in new workspace`
-            : `   Start PI: cd ${worktreePath} && pi`),
-        "success",
-      );
+      // Tools are bound to the original cwd; must relaunch pi in the
+      // worktree directory so all tools resolve paths correctly.
+      const relaunched = relaunchInPlace(pi, worktreePath);
+      if (!relaunched) {
+        ctx.ui.notify(
+          `✅ Worktree "${name}" ready\n` +
+            `   Path:   ${worktreePath}\n` +
+            `   Branch: ${branch}\n` +
+            `   Start PI: cd ${worktreePath} && pi`,
+          "success",
+        );
+      }
+      if (relaunched) {
+        ctx.shutdown();
+      }
     } catch (err) {
       ctx.ui.setStatus("worktree", undefined);
       ctx.ui.notify(`Failed to create worktree: ${(err as Error).message}`, "error");
@@ -409,39 +408,58 @@ async function createWorktree(
 }
 
 // ---------------------------------------------------------------------------
-// Launch PI in worktree via cmux or tmux
+// Relaunch PI in worktree within the current terminal
 // ---------------------------------------------------------------------------
 
-async function launchInWorktree(
+/**
+ * Schedule `cd <worktree> && exec pi` to run in the current terminal after
+ * pi exits, so that pi restarts in the same workspace with the worktree as cwd.
+ *
+ * Why relaunch instead of just chdir?
+ *   Pi captures `cwd` at startup (`const cwd = options.cwd ?? process.cwd()`)
+ *   BEFORE extensions are loaded, and passes it to `createAllTools(cwd, ...)`.
+ *   All built-in tools (bash, read, edit, write, etc.) bind to this cwd via
+ *   closure — there is no `setCwd()` API and `process.chdir()` has no effect.
+ *   The earliest extension hook (`session_start`) fires AFTER tools are created,
+ *   so changing cwd from an extension is architecturally impossible.
+ *
+ * Strategy:
+ *   1. Spawn a detached child that sleeps briefly (0.3s)
+ *   2. The caller calls ctx.shutdown() to exit pi gracefully
+ *   3. After pi exits, the shell regains control of stdin
+ *   4. The detached child injects `cd <worktree> && exec pi` into the terminal
+ *      via cmux send (terminal input buffer) or tmux send-keys
+ *   5. The shell executes the injected command, relaunching pi in the worktree
+ *
+ * Returns true if relaunch was scheduled (caller must call ctx.shutdown()),
+ * false if no supported terminal multiplexer was detected.
+ */
+function relaunchInPlace(
   pi: ExtensionAPI,
-  ctx: any,
   worktreePath: string,
-  name: string,
-): Promise<boolean> {
-  // Try cmux first
-  const hasCmux = (await pi.exec("bash", ["-c", "command -v cmux"], { timeout: 3_000 })).code === 0;
+): boolean {
+  const cmd = `cd '${worktreePath}' && exec pi\n`;
+
+  const hasCmux = process.env.CMUX_SURFACE_ID;
+  const hasTmux = process.env.TMUX;
+
+  let shellCmd: string;
   if (hasCmux) {
-    const result = await pi.exec("bash", ["-c",
-      `cmux new-workspace --command "cd '${worktreePath}' && exec pi"`
-    ], { timeout: 5_000 });
-    if (result.code === 0) {
-      await pi.exec("bash", ["-c", `cmux rename-workspace "wt:${name}"`], { timeout: 3_000 });
-      return true;
-    }
+    const surfaceId = process.env.CMUX_SURFACE_ID;
+    shellCmd = `sleep 0.3 && cmux send --surface '${surfaceId}' '${cmd}'`;
+  } else if (hasTmux) {
+    shellCmd = `sleep 0.3 && tmux send-keys '${cmd}'`;
+  } else {
+    return false;
   }
 
-  // Try tmux
-  const hasTmux = (await pi.exec("bash", ["-c", "command -v tmux"], { timeout: 3_000 })).code === 0;
-  if (hasTmux) {
-    // Check if we're inside tmux
-    const inTmux = (await pi.exec("bash", ["-c", 'echo "$TMUX"'], { timeout: 3_000 }));
-    if (inTmux.code === 0 && inTmux.stdout.trim()) {
-      const result = await pi.exec("bash", ["-c",
-        `tmux new-window -n "wt:${name}" "cd '${worktreePath}' && exec pi"`
-      ], { timeout: 5_000 });
-      return result.code === 0;
-    }
-  }
+  // Spawn detached so it outlives pi's shutdown
+  const { spawn } = require("node:child_process");
+  const child = spawn("bash", ["-c", shellCmd], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
 
-  return false;
+  return true;
 }
