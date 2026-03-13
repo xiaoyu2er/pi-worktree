@@ -1,6 +1,6 @@
 {
   "name": "pi-worktree",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Git worktree management for Pi — create isolated workspaces with one command, optionally launch in cmux/tmux.",
   "license": "MIT",
   "type": "module",
@@ -19,8 +19,12 @@
     "README.md"
   ],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "engines": {
     "node": ">=18"
