@@ -26,6 +26,15 @@
       "./skills"
     ]
   },
+  "scripts": {
+    "test": "bun test",
+    "lint": "biome check . && npx tsc --noEmit",
+    "lint:fix": "biome check --fix ."
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  },
   "engines": {
     "node": ">=18"
   },
