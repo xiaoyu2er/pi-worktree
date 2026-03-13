@@ -438,7 +438,7 @@ function relaunchInPlace(
   pi: ExtensionAPI,
   worktreePath: string,
 ): boolean {
-  const cmd = `cd '${worktreePath}' && exec pi\n`;
+  const cmd = `cd '${worktreePath}' && pi\n`;
 
   const hasCmux = process.env.CMUX_SURFACE_ID;
   const hasTmux = process.env.TMUX;
