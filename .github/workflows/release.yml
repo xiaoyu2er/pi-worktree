@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
@@ -71,7 +72,7 @@ jobs:
           NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
           echo "Bumping $CURRENT -> $NEW_VERSION ($BUMP)"
 
-          # Update package.json in-place
+          # Update package.json
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -79,9 +80,17 @@ jobs:
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
+          # Commit version bump and tag
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: release ${NEW_VERSION} [skip ci]"
+          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
+          git push origin main --tags
+
           # Generate release notes
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          RANGE="${LAST_TAG:+$LAST_TAG..}HEAD"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${NEW_VERSION}^" 2>/dev/null || echo "")
+          RANGE="${PREV_TAG:+$PREV_TAG..}${NEW_VERSION}"
 
           NOTES=""
           FEATS=$(git log "$RANGE" --pretty=format:"* %s (%h)" --grep="^feat" --extended-regexp || true)
@@ -89,16 +98,10 @@ jobs:
           [ -n "$FEATS" ] && NOTES="${NOTES}### Features\n\n${FEATS}\n\n"
           [ -n "$FIXES" ] && NOTES="${NOTES}### Bug Fixes\n\n${FIXES}\n\n"
 
-          # Create tag on current commit and push
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
-          git push origin "$NEW_VERSION"
-
           # Create GitHub release
           printf '%b' "$NOTES" | gh release create "$NEW_VERSION" \
             --title "$NEW_VERSION" \
             --notes-file -
 
-          # Publish to npm (package.json is modified in working dir)
+          # Publish to npm
           npm publish
