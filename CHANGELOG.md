@@ -7,6 +7,13 @@
 
 * expand ~ to home directory in worktree dir config ([#10](https://github.com/xiaoyu2er/pi-worktree/issues/10)) ([14da7de](https://github.com/xiaoyu2er/pi-worktree/commit/14da7de2842bc64b0d2ef01aab2bf485620db51a))
 
+## [1.2.0](https://github.com/xiaoyu2er/pi-worktree/compare/v1.1.0...v1.2.0) (2026-03-13)
+
+
+### Features
+
+* expand ~ to home directory in worktree dir config ([#10](https://github.com/xiaoyu2er/pi-worktree/issues/10)) ([14da7de](https://github.com/xiaoyu2er/pi-worktree/commit/14da7de2842bc64b0d2ef01aab2bf485620db51a))
+
 ## [1.1.0](https://github.com/xiaoyu2er/pi-worktree/compare/v1.0.2...v1.1.0) (2026-03-13)
 
 
