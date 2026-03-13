@@ -14,13 +14,13 @@
     "tmux"
   ],
   "files": [
-    "extensions/",
+    "extensions/worktree.ts",
     "skills/",
     "README.md"
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/worktree.ts"
     ],
     "skills": [
       "./skills"
