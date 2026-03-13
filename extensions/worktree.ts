@@ -1,28 +1,122 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync } from "node:fs";
-import { resolve, basename, dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Name generator (adjective-noun)
 // ---------------------------------------------------------------------------
 
-const ADJECTIVES = [
-  "bright", "calm", "cool", "dark", "dry", "fast", "firm", "flat", "fresh", "gold",
-  "green", "keen", "kind", "late", "lean", "live", "long", "loud", "neat", "new",
-  "nice", "odd", "old", "pale", "pink", "pure", "rare", "raw", "red", "rich",
-  "ripe", "safe", "shy", "slim", "slow", "soft", "sour", "tall", "thin", "warm",
-  "weak", "wide", "wild", "wise", "bold", "cold", "deep", "fair", "free", "glad",
+export const ADJECTIVES = [
+  "bright",
+  "calm",
+  "cool",
+  "dark",
+  "dry",
+  "fast",
+  "firm",
+  "flat",
+  "fresh",
+  "gold",
+  "green",
+  "keen",
+  "kind",
+  "late",
+  "lean",
+  "live",
+  "long",
+  "loud",
+  "neat",
+  "new",
+  "nice",
+  "odd",
+  "old",
+  "pale",
+  "pink",
+  "pure",
+  "rare",
+  "raw",
+  "red",
+  "rich",
+  "ripe",
+  "safe",
+  "shy",
+  "slim",
+  "slow",
+  "soft",
+  "sour",
+  "tall",
+  "thin",
+  "warm",
+  "weak",
+  "wide",
+  "wild",
+  "wise",
+  "bold",
+  "cold",
+  "deep",
+  "fair",
+  "free",
+  "glad",
 ];
 
-const NOUNS = [
-  "ant", "ape", "bat", "bee", "bug", "cat", "cod", "cow", "cub", "doe",
-  "dog", "eel", "elk", "emu", "ewe", "fly", "fox", "gnu", "hen", "hog",
-  "jay", "kit", "koi", "lark", "lynx", "moth", "mule", "newt", "owl", "pike",
-  "pony", "pug", "ram", "ray", "seal", "slug", "swan", "toad", "wasp", "wren",
-  "yak", "bass", "bear", "boar", "buck", "bull", "carp", "clam", "colt", "crab",
+export const NOUNS = [
+  "ant",
+  "ape",
+  "bat",
+  "bee",
+  "bug",
+  "cat",
+  "cod",
+  "cow",
+  "cub",
+  "doe",
+  "dog",
+  "eel",
+  "elk",
+  "emu",
+  "ewe",
+  "fly",
+  "fox",
+  "gnu",
+  "hen",
+  "hog",
+  "jay",
+  "kit",
+  "koi",
+  "lark",
+  "lynx",
+  "moth",
+  "mule",
+  "newt",
+  "owl",
+  "pike",
+  "pony",
+  "pug",
+  "ram",
+  "ray",
+  "seal",
+  "slug",
+  "swan",
+  "toad",
+  "wasp",
+  "wren",
+  "yak",
+  "bass",
+  "bear",
+  "boar",
+  "buck",
+  "bull",
+  "carp",
+  "clam",
+  "colt",
+  "crab",
 ];
 
-function generateName(): string {
+export function generateName(): string {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
   const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
   return `${adj}-${noun}`;
@@ -35,7 +129,11 @@ function generateName(): string {
 /** Get the real repo root (handles being inside a worktree). */
 async function getRepoRoot(pi: ExtensionAPI): Promise<string> {
   // git rev-parse --git-common-dir gives .git for main, ../../.git/worktrees/<name> for worktree
-  const r = await pi.exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { timeout: 5_000 });
+  const r = await pi.exec(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { timeout: 5_000 },
+  );
   if (r.code !== 0) throw new Error("Not inside a git repository");
   // commonDir is e.g. /repo/.git — parent is repo root
   const commonDir = r.stdout.trim();
@@ -43,7 +141,7 @@ async function getRepoRoot(pi: ExtensionAPI): Promise<string> {
 }
 
 /** Detect if cwd is a worktree under .worktrees/<name>. */
-function detectWorktreeName(cwd: string): string | null {
+export function detectWorktreeName(cwd: string): string | null {
   const m = cwd.match(/\/\.worktrees\/([^/]+)/);
   return m ? m[1] : null;
 }
@@ -52,7 +150,7 @@ function detectWorktreeName(cwd: string): string | null {
 // Config: project-level hooks
 // ---------------------------------------------------------------------------
 
-interface WorktreeConfig {
+export interface WorktreeConfig {
   /** Directory to create worktrees in, relative to repo root. Default: ".worktrees" */
   dir?: string;
   /** Branch prefix. Default: "worktree/" */
@@ -65,7 +163,7 @@ interface WorktreeConfig {
   linkEnvFiles?: boolean;
 }
 
-function loadConfig(repoRoot: string): WorktreeConfig {
+export function loadConfig(repoRoot: string): WorktreeConfig {
   const configPath = join(repoRoot, ".pi", "worktree.json");
   if (existsSync(configPath)) {
     try {
@@ -77,11 +175,14 @@ function loadConfig(repoRoot: string): WorktreeConfig {
   return {};
 }
 
-function getWorktreeDir(repoRoot: string, config: WorktreeConfig): string {
+export function getWorktreeDir(
+  repoRoot: string,
+  config: WorktreeConfig,
+): string {
   return resolve(repoRoot, config.dir ?? ".worktrees");
 }
 
-function getBranchPrefix(config: WorktreeConfig): string {
+export function getBranchPrefix(config: WorktreeConfig): string {
   return config.branchPrefix ?? "worktree/";
 }
 
@@ -94,7 +195,8 @@ export default function (pi: ExtensionAPI) {
 
   // --- Register --worktree flag ---
   pi.registerFlag("worktree", {
-    description: "Create or reuse a git worktree and work inside it. Optionally specify a name.",
+    description:
+      "Create or reuse a git worktree and work inside it. Optionally specify a name.",
     type: "string",
   });
 
@@ -105,7 +207,10 @@ export default function (pi: ExtensionAPI) {
 
     if (flagValue !== undefined && flagValue !== false) {
       // --worktree was passed (with or without a name)
-      const name = typeof flagValue === "string" && flagValue.length > 0 ? flagValue : generateName();
+      const name =
+        typeof flagValue === "string" && flagValue.length > 0
+          ? flagValue
+          : generateName();
 
       try {
         const repoRoot = await getRepoRoot(pi);
@@ -140,7 +245,7 @@ export default function (pi: ExtensionAPI) {
                 `   Path: ${worktreePath}\n` +
                 `   Branch: ${branch}\n` +
                 `   Start PI there: cd ${worktreePath} && pi`,
-              "success",
+              "info",
             );
           }
           ctx.ui.setStatus("worktree", undefined);
@@ -151,7 +256,10 @@ export default function (pi: ExtensionAPI) {
         }
       } catch (err) {
         ctx.ui.setStatus("worktree", undefined);
-        ctx.ui.notify(`Failed to set up worktree: ${(err as Error).message}`, "error");
+        ctx.ui.notify(
+          `Failed to set up worktree: ${(err as Error).message}`,
+          "error",
+        );
         return;
       }
     } else {
@@ -238,10 +346,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   // --- Create handler ---
-  async function handleCreate(nameArg: string, ctx: any) {
+  async function handleCreate(nameArg: string, ctx: ExtensionCommandContext) {
     const name = nameArg || generateName();
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-      ctx.ui.notify("Name must be alphanumeric with hyphens/underscores only", "error");
+      ctx.ui.notify(
+        "Name must be alphanumeric with hyphens/underscores only",
+        "error",
+      );
       return;
     }
 
@@ -263,7 +374,7 @@ export default function (pi: ExtensionAPI) {
             `   Path:   ${worktreePath}\n` +
             `   Branch: ${branch}\n` +
             `   Start PI: cd ${worktreePath} && pi`,
-          "success",
+          "info",
         );
       }
       if (relaunched) {
@@ -271,12 +382,15 @@ export default function (pi: ExtensionAPI) {
       }
     } catch (err) {
       ctx.ui.setStatus("worktree", undefined);
-      ctx.ui.notify(`Failed to create worktree: ${(err as Error).message}`, "error");
+      ctx.ui.notify(
+        `Failed to create worktree: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
   // --- Destroy handler ---
-  async function handleDestroy(name: string, ctx: any) {
+  async function handleDestroy(name: string, ctx: ExtensionCommandContext) {
     if (!name) {
       ctx.ui.notify("Usage: /worktree destroy <name>", "error");
       return;
@@ -290,7 +404,10 @@ export default function (pi: ExtensionAPI) {
       const branch = `${getBranchPrefix(config)}${name}`;
 
       if (!existsSync(worktreePath)) {
-        ctx.ui.notify(`Worktree "${name}" does not exist at ${worktreePath}`, "error");
+        ctx.ui.notify(
+          `Worktree "${name}" does not exist at ${worktreePath}`,
+          "error",
+        );
         return;
       }
 
@@ -312,36 +429,53 @@ export default function (pi: ExtensionAPI) {
 
       // Remove worktree
       step("⏳ Removing git worktree...");
-      const rmResult = await pi.exec("bash", ["-c", `
+      const _rmResult = await pi.exec(
+        "bash",
+        [
+          "-c",
+          `
         cd "${repoRoot}"
         git worktree remove --force "${worktreePath}" 2>&1 || {
           rm -rf "${worktreePath}" 2>&1 || true
           git worktree prune 2>&1 || true
         }
-      `], { timeout: 10_000 });
+      `,
+        ],
+        { timeout: 10_000 },
+      );
 
       // Delete branch
       step("⏳ Deleting branch...");
-      await pi.exec("bash", ["-c",
-        `cd "${repoRoot}" && git branch -D "${branch}" 2>/dev/null || true`
-      ], { timeout: 5_000 });
+      await pi.exec(
+        "bash",
+        [
+          "-c",
+          `cd "${repoRoot}" && git branch -D "${branch}" 2>/dev/null || true`,
+        ],
+        { timeout: 5_000 },
+      );
 
       step("");
       ctx.ui.notify(
         `✅ Worktree "${name}" destroyed\n` +
           `   Path:   ${worktreePath} (removed)\n` +
           `   Branch: ${branch} (deleted)`,
-        "success",
+        "info",
       );
     } catch (err) {
       ctx.ui.setStatus("worktree", undefined);
-      ctx.ui.notify(`Failed to destroy worktree: ${(err as Error).message}`, "error");
+      ctx.ui.notify(
+        `Failed to destroy worktree: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
   // --- List handler ---
-  async function handleList(ctx: any) {
-    const result = await pi.exec("git", ["worktree", "list"], { timeout: 5_000 });
+  async function handleList(ctx: ExtensionCommandContext) {
+    const result = await pi.exec("git", ["worktree", "list"], {
+      timeout: 5_000,
+    });
     if (result.code !== 0) {
       ctx.ui.notify("Failed to list worktrees", "error");
       return;
@@ -356,7 +490,7 @@ export default function (pi: ExtensionAPI) {
 
 async function createWorktree(
   pi: ExtensionAPI,
-  ctx: any,
+  ctx: ExtensionContext,
   repoRoot: string,
   config: WorktreeConfig,
   name: string,
@@ -399,8 +533,12 @@ async function createWorktree(
   if (config.postCreate?.length) {
     for (let i = 0; i < config.postCreate.length; i++) {
       const cmd = config.postCreate[i];
-      step(`⏳ Post-create [${i + 1}/${config.postCreate.length}]: ${cmd.slice(0, 60)}...`);
-      await pi.exec("bash", ["-c", `cd "${worktreePath}" && ${cmd}`], { timeout: 120_000 });
+      step(
+        `⏳ Post-create [${i + 1}/${config.postCreate.length}]: ${cmd.slice(0, 60)}...`,
+      );
+      await pi.exec("bash", ["-c", `cd "${worktreePath}" && ${cmd}`], {
+        timeout: 120_000,
+      });
     }
   }
 
@@ -434,10 +572,7 @@ async function createWorktree(
  * Returns true if relaunch was scheduled (caller must call ctx.shutdown()),
  * false if no supported terminal multiplexer was detected.
  */
-function relaunchInPlace(
-  pi: ExtensionAPI,
-  worktreePath: string,
-): boolean {
+function relaunchInPlace(_pi: ExtensionAPI, worktreePath: string): boolean {
   const cmd = `cd '${worktreePath}' && pi\n`;
 
   const hasCmux = process.env.CMUX_SURFACE_ID;
