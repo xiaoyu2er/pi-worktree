@@ -1,0 +1,33 @@
+{
+  "name": "pi-worktree",
+  "version": "0.1.0",
+  "description": "Git worktree management for Pi — create isolated workspaces with one command, optionally launch in cmux/tmux.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package",
+    "git",
+    "worktree",
+    "cmux",
+    "tmux"
+  ],
+  "files": [
+    "extensions/",
+    "skills/",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@sinclair/typebox": "*"
+  }
+}
