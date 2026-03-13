@@ -184,13 +184,14 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // --- /worktree create [name] ---
+  // --- Commands ---
+  // Main command with subcommands
   pi.registerCommand("worktree", {
     description:
-      "Git worktree management. Subcommands: create [name], destroy <name>, list",
+      "Git worktree management. Usage: /worktree [name], /worktree create [name], /worktree destroy <name>, /worktree list",
     handler: async (args, ctx) => {
       const parts = (args ?? "").trim().split(/\s+/);
-      const sub = parts[0] || "help";
+      const sub = parts[0] || "";
       const subArg = parts.slice(1).join(" ").trim();
 
       switch (sub) {
@@ -211,7 +212,9 @@ export default function (pi: ExtensionAPI) {
               "  /worktree create [name]  — Same as above\n" +
               "  /worktree destroy <name> — Destroy a worktree\n" +
               "  /worktree list           — List all worktrees\n" +
-              "  /worktree help           — Show this help",
+              "  /worktree help           — Show this help\n" +
+              "\n" +
+              "Shortcuts: /worktree-create, /worktree-destroy, /worktree-list",
             "info",
           );
           return;
@@ -220,6 +223,22 @@ export default function (pi: ExtensionAPI) {
           return handleCreate(args?.trim() || "", ctx);
       }
     },
+  });
+
+  // Shortcut commands
+  pi.registerCommand("worktree-create", {
+    description: "Create a new git worktree (shortcut for /worktree create)",
+    handler: async (args, ctx) => handleCreate(args?.trim() || "", ctx),
+  });
+
+  pi.registerCommand("worktree-destroy", {
+    description: "Destroy a git worktree (shortcut for /worktree destroy)",
+    handler: async (args, ctx) => handleDestroy(args?.trim() || "", ctx),
+  });
+
+  pi.registerCommand("worktree-list", {
+    description: "List all git worktrees (shortcut for /worktree list)",
+    handler: async (_args, ctx) => handleList(ctx),
   });
 
   // --- Create handler ---
