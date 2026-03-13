@@ -7,6 +7,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import initExtension, {
   ADJECTIVES,
   detectWorktreeName,
+  expandHome,
   generateName,
   getBranchPrefix,
   getWorktreeDir,
@@ -184,7 +185,39 @@ describe("loadConfig", () => {
   });
 });
 
+describe("expandHome", () => {
+  const home = require("node:os").homedir();
+
+  test("expands lone ~", () => {
+    expect(expandHome("~")).toBe(home);
+  });
+
+  test("expands ~/ prefix", () => {
+    expect(expandHome("~/.worktrees/proj")).toBe(join(home, ".worktrees/proj"));
+  });
+
+  test("expands ~\\ prefix (Windows)", () => {
+    expect(expandHome("~\\.worktrees\\proj")).toBe(
+      join(home, ".worktrees\\proj"),
+    );
+  });
+
+  test("leaves absolute paths unchanged", () => {
+    expect(expandHome("/absolute/path")).toBe("/absolute/path");
+  });
+
+  test("leaves relative paths unchanged", () => {
+    expect(expandHome("relative/path")).toBe("relative/path");
+  });
+
+  test("does not expand ~ in the middle", () => {
+    expect(expandHome("foo/~/bar")).toBe("foo/~/bar");
+  });
+});
+
 describe("getWorktreeDir", () => {
+  const home = require("node:os").homedir();
+
   test("returns default .worktrees", () => {
     expect(getWorktreeDir("/repo", {})).toBe(resolve("/repo", ".worktrees"));
   });
@@ -192,6 +225,18 @@ describe("getWorktreeDir", () => {
   test("uses custom dir from config", () => {
     expect(getWorktreeDir("/repo", { dir: "my-wt" })).toBe(
       resolve("/repo", "my-wt"),
+    );
+  });
+
+  test("expands ~ in dir config", () => {
+    expect(getWorktreeDir("/repo", { dir: "~/.worktrees/proj" })).toBe(
+      join(home, ".worktrees/proj"),
+    );
+  });
+
+  test("uses absolute dir as-is", () => {
+    expect(getWorktreeDir("/repo", { dir: "/tmp/worktrees" })).toBe(
+      "/tmp/worktrees",
     );
   });
 });
