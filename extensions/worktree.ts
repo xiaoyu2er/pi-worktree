@@ -204,14 +204,20 @@ export default function (pi: ExtensionAPI) {
         case "list":
         case "ls":
           return handleList(ctx);
-        default:
+        case "help":
           ctx.ui.notify(
             "Usage:\n" +
-              "  /worktree create [name]  — Create a new worktree\n" +
+              "  /worktree [name]         — Create a new worktree (auto-generates name if omitted)\n" +
+              "  /worktree create [name]  — Same as above\n" +
               "  /worktree destroy <name> — Destroy a worktree\n" +
-              "  /worktree list           — List all worktrees",
+              "  /worktree list           — List all worktrees\n" +
+              "  /worktree help           — Show this help",
             "info",
           );
+          return;
+        default:
+          // No subcommand or unrecognized word → treat as name for create
+          return handleCreate(args?.trim() || "", ctx);
       }
     },
   });
