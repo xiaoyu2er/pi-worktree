@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/xiaoyu2er/pi-worktree/compare/v1.0.1...v1.0.2) (2026-03-13)
+
+
+### Bug Fixes
+
+* rewrite README with motivation, generic examples, and relaunch docs ([#5](https://github.com/xiaoyu2er/pi-worktree/issues/5)) ([d14fa0c](https://github.com/xiaoyu2er/pi-worktree/commit/d14fa0c0f4341de1de8725ff8205a8d2db0a663e))
+
 ## [1.0.1](https://github.com/xiaoyu2er/pi-worktree/compare/v1.0.0...v1.0.1) (2026-03-13)
 
 
