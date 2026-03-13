@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   release:
+    # Skip commits pushed by this workflow
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,22 +27,19 @@ jobs:
       - name: Determine version bump
         id: bump
         run: |
-          # Get commits since last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$LAST_TAG" ]; then
-            RANGE="HEAD"
-          else
-            RANGE="${LAST_TAG}..HEAD"
-          fi
+          # Get the latest tag as base version (ignore package.json)
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Last tag: $LAST_TAG"
 
-          COMMITS=$(git log "$RANGE" --pretty=format:"%s")
+          # Get commits since last tag
+          COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || "")
           if [ -z "$COMMITS" ]; then
             echo "bump=" >> "$GITHUB_OUTPUT"
             echo "No new commits since $LAST_TAG"
             exit 0
           fi
 
-          # Check conventional commit types (most breaking first)
+          # Determine bump type from conventional commits
           BUMP=""
           if echo "$COMMITS" | grep -qE "^feat(\(.*\))?!:|BREAKING CHANGE"; then
             BUMP="major"
@@ -50,57 +49,62 @@ jobs:
             BUMP="patch"
           fi
 
-          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
-          echo "Detected bump: ${BUMP:-none}"
+          if [ -z "$BUMP" ]; then
+            echo "bump=" >> "$GITHUB_OUTPUT"
+            echo "No releasable commits"
+            exit 0
+          fi
 
-      - name: Bump, tag, release, and publish
-        if: steps.bump.outputs.bump != ''
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BUMP="${{ steps.bump.outputs.bump }}"
-
-          # Calculate new version
-          CURRENT=$(node -p "require('./package.json').version")
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          # Calculate new version from tag (not package.json)
+          VERSION="${LAST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
           case "$BUMP" in
             major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
             minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
             patch) PATCH=$((PATCH + 1)) ;;
           esac
-          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-          echo "Bumping $CURRENT -> $NEW_VERSION ($BUMP)"
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
-          # Update package.json
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Bump: $BUMP ($LAST_TAG -> v$NEW_VERSION)"
+
+      - name: Release and publish
+        if: steps.bump.outputs.bump != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.version }}"
+          TAG="${{ steps.bump.outputs.tag }}"
+          LAST_TAG="${{ steps.bump.outputs.last_tag }}"
+
+          # Set package.json version for npm publish (working dir only)
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = '${MAJOR}.${MINOR}.${PATCH}';
+            pkg.version = '$NEW_VERSION';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-          # Commit version bump and tag
+          # Tag and push (tags aren't restricted by branch protection)
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          git commit -m "chore: release ${NEW_VERSION} [skip ci]"
-          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
-          git push origin main --tags
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
 
           # Generate release notes
-          PREV_TAG=$(git describe --tags --abbrev=0 "${NEW_VERSION}^" 2>/dev/null || echo "")
-          RANGE="${PREV_TAG:+$PREV_TAG..}${NEW_VERSION}"
-
           NOTES=""
-          FEATS=$(git log "$RANGE" --pretty=format:"* %s (%h)" --grep="^feat" --extended-regexp || true)
-          FIXES=$(git log "$RANGE" --pretty=format:"* %s (%h)" --grep="^fix" --extended-regexp || true)
+          FEATS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"* %s (%h)" --grep="^feat" --extended-regexp || true)
+          FIXES=$(git log "${LAST_TAG}..HEAD" --pretty=format:"* %s (%h)" --grep="^fix" --extended-regexp || true)
           [ -n "$FEATS" ] && NOTES="${NOTES}### Features\n\n${FEATS}\n\n"
           [ -n "$FIXES" ] && NOTES="${NOTES}### Bug Fixes\n\n${FIXES}\n\n"
 
           # Create GitHub release
-          printf '%b' "$NOTES" | gh release create "$NEW_VERSION" \
-            --title "$NEW_VERSION" \
+          printf '%b' "$NOTES" | gh release create "$TAG" \
+            --title "$TAG" \
             --notes-file -
 
           # Publish to npm
