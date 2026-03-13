@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type {
   ExtensionAPI,
@@ -175,11 +176,21 @@ export function loadConfig(repoRoot: string): WorktreeConfig {
   return {};
 }
 
+/** Expand a leading `~` or `~/` to the user's home directory. */
+export function expandHome(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/") || p.startsWith("~\\")) {
+    return join(homedir(), p.slice(2));
+  }
+  return p;
+}
+
 export function getWorktreeDir(
   repoRoot: string,
   config: WorktreeConfig,
 ): string {
-  return resolve(repoRoot, config.dir ?? ".worktrees");
+  const dir = config.dir ?? ".worktrees";
+  return resolve(repoRoot, expandHome(dir));
 }
 
 export function getBranchPrefix(config: WorktreeConfig): string {
@@ -231,29 +242,13 @@ export default function (pi: ExtensionAPI) {
         }
 
         const detected = detectWorktreeName(ctx.cwd);
-        if (detected === name) {
-          // Already running inside the worktree — nothing to do
-          worktreeName = name;
-          pi.setSessionName(`wt:${name}`);
-        } else {
-          // Tools are bound to the original cwd; must relaunch pi in the
-          // worktree directory so all tools resolve paths correctly.
-          const relaunched = relaunchInPlace(pi, worktreePath);
-          if (!relaunched) {
-            ctx.ui.notify(
-              `✅ Worktree "${name}" ready.\n` +
-                `   Path: ${worktreePath}\n` +
-                `   Branch: ${branch}\n` +
-                `   Start PI there: cd ${worktreePath} && pi`,
-              "info",
-            );
-          }
-          ctx.ui.setStatus("worktree", undefined);
-          if (relaunched) {
-            ctx.shutdown();
-          }
-          return;
+        if (detected !== name) {
+          // Switch tools to the worktree directory
+          ctx.setCwd(worktreePath);
         }
+
+        worktreeName = name;
+        pi.setSessionName(`wt:${name}`);
       } catch (err) {
         ctx.ui.setStatus("worktree", undefined);
         ctx.ui.notify(
@@ -365,21 +360,18 @@ export default function (pi: ExtensionAPI) {
 
       await createWorktree(pi, ctx, repoRoot, config, name);
 
-      // Tools are bound to the original cwd; must relaunch pi in the
-      // worktree directory so all tools resolve paths correctly.
-      const relaunched = relaunchInPlace(pi, worktreePath);
-      if (!relaunched) {
-        ctx.ui.notify(
-          `✅ Worktree "${name}" ready\n` +
-            `   Path:   ${worktreePath}\n` +
-            `   Branch: ${branch}\n` +
-            `   Start PI: cd ${worktreePath} && pi`,
-          "info",
-        );
-      }
-      if (relaunched) {
-        ctx.shutdown();
-      }
+      // Switch tools to the worktree directory
+      ctx.setCwd(worktreePath);
+
+      worktreeName = name;
+      pi.setSessionName(`wt:${name}`);
+      ctx.ui.setStatus("worktree", `🌿 ${name}`);
+      ctx.ui.notify(
+        `✅ Worktree "${name}" ready\n` +
+          `   Path:   ${worktreePath}\n` +
+          `   Branch: ${branch}`,
+        "info",
+      );
     } catch (err) {
       ctx.ui.setStatus("worktree", undefined);
       ctx.ui.notify(
@@ -543,58 +535,4 @@ async function createWorktree(
   }
 
   step("");
-}
-
-// ---------------------------------------------------------------------------
-// Relaunch PI in worktree within the current terminal
-// ---------------------------------------------------------------------------
-
-/**
- * Schedule `cd <worktree> && exec pi` to run in the current terminal after
- * pi exits, so that pi restarts in the same workspace with the worktree as cwd.
- *
- * Why relaunch instead of just chdir?
- *   Pi captures `cwd` at startup (`const cwd = options.cwd ?? process.cwd()`)
- *   BEFORE extensions are loaded, and passes it to `createAllTools(cwd, ...)`.
- *   All built-in tools (bash, read, edit, write, etc.) bind to this cwd via
- *   closure — there is no `setCwd()` API and `process.chdir()` has no effect.
- *   The earliest extension hook (`session_start`) fires AFTER tools are created,
- *   so changing cwd from an extension is architecturally impossible.
- *
- * Strategy:
- *   1. Spawn a detached child that sleeps briefly (0.3s)
- *   2. The caller calls ctx.shutdown() to exit pi gracefully
- *   3. After pi exits, the shell regains control of stdin
- *   4. The detached child injects `cd <worktree> && exec pi` into the terminal
- *      via cmux send (terminal input buffer) or tmux send-keys
- *   5. The shell executes the injected command, relaunching pi in the worktree
- *
- * Returns true if relaunch was scheduled (caller must call ctx.shutdown()),
- * false if no supported terminal multiplexer was detected.
- */
-function relaunchInPlace(_pi: ExtensionAPI, worktreePath: string): boolean {
-  const cmd = `cd '${worktreePath}' && pi\n`;
-
-  const hasCmux = process.env.CMUX_SURFACE_ID;
-  const hasTmux = process.env.TMUX;
-
-  let shellCmd: string;
-  if (hasCmux) {
-    const surfaceId = process.env.CMUX_SURFACE_ID;
-    shellCmd = `sleep 0.3 && cmux send --surface '${surfaceId}' '${cmd}'`;
-  } else if (hasTmux) {
-    shellCmd = `sleep 0.3 && tmux send-keys '${cmd}'`;
-  } else {
-    return false;
-  }
-
-  // Spawn detached so it outlives pi's shutdown
-  const { spawn } = require("node:child_process");
-  const child = spawn("bash", ["-c", shellCmd], {
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
-
-  return true;
 }
