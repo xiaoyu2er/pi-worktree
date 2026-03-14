@@ -201,6 +201,46 @@ export function getBranchPrefix(config: WorktreeConfig): string {
 // Extension
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Relaunch helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Relaunch pi in the given directory by injecting `cd <path> && pi` into
+ * the current terminal via cmux or tmux send-keys.
+ * Returns true if a relaunch was triggered, false if not in a multiplexer.
+ */
+function relaunchInPlace(_pi: ExtensionAPI, worktreePath: string): boolean {
+  const cmd = `cd '${worktreePath}' && pi\n`;
+
+  const hasCmux = process.env.CMUX_SURFACE_ID;
+  const hasTmux = process.env.TMUX;
+
+  let shellCmd: string;
+  if (hasCmux) {
+    const surfaceId = process.env.CMUX_SURFACE_ID;
+    shellCmd = `sleep 0.3 && cmux send --surface '${surfaceId}' '${cmd}'`;
+  } else if (hasTmux) {
+    shellCmd = `sleep 0.3 && tmux send-keys '${cmd}'`;
+  } else {
+    return false;
+  }
+
+  // Spawn detached so it outlives pi's shutdown
+  const { spawn } = require("node:child_process");
+  const child = spawn("bash", ["-c", shellCmd], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Extension
+// ---------------------------------------------------------------------------
+
 export default function (pi: ExtensionAPI) {
   let worktreeName: string | null = null;
 
@@ -242,13 +282,29 @@ export default function (pi: ExtensionAPI) {
         }
 
         const detected = detectWorktreeName(ctx.cwd);
-        if (detected !== name) {
-          // Switch tools to the worktree directory
-          ctx.setCwd(worktreePath);
+        if (detected === name) {
+          // Already running inside the worktree — nothing to do
+          worktreeName = name;
+          pi.setSessionName(`wt:${name}`);
+        } else {
+          // Tools are bound to the original cwd; must relaunch pi in the
+          // worktree directory so all tools resolve paths correctly.
+          const relaunched = relaunchInPlace(pi, worktreePath);
+          if (!relaunched) {
+            ctx.ui.notify(
+              `✅ Worktree "${name}" ready.\n` +
+                `   Path: ${worktreePath}\n` +
+                `   Branch: ${branch}\n` +
+                `   Start PI there: cd ${worktreePath} && pi`,
+              "info",
+            );
+          }
+          ctx.ui.setStatus("worktree", undefined);
+          if (relaunched) {
+            ctx.shutdown();
+          }
+          return;
         }
-
-        worktreeName = name;
-        pi.setSessionName(`wt:${name}`);
       } catch (err) {
         ctx.ui.setStatus("worktree", undefined);
         ctx.ui.notify(
@@ -360,18 +416,21 @@ export default function (pi: ExtensionAPI) {
 
       await createWorktree(pi, ctx, repoRoot, config, name);
 
-      // Switch tools to the worktree directory
-      ctx.setCwd(worktreePath);
-
-      worktreeName = name;
-      pi.setSessionName(`wt:${name}`);
-      ctx.ui.setStatus("worktree", `🌿 ${name}`);
-      ctx.ui.notify(
-        `✅ Worktree "${name}" ready\n` +
-          `   Path:   ${worktreePath}\n` +
-          `   Branch: ${branch}`,
-        "info",
-      );
+      // Tools are bound to the original cwd; must relaunch pi in the
+      // worktree directory so all tools resolve paths correctly.
+      const relaunched = relaunchInPlace(pi, worktreePath);
+      if (!relaunched) {
+        ctx.ui.notify(
+          `✅ Worktree "${name}" ready\n` +
+            `   Path:   ${worktreePath}\n` +
+            `   Branch: ${branch}\n` +
+            `   Start PI: cd ${worktreePath} && pi`,
+          "info",
+        );
+      }
+      if (relaunched) {
+        ctx.shutdown();
+      }
     } catch (err) {
       ctx.ui.setStatus("worktree", undefined);
       ctx.ui.notify(
